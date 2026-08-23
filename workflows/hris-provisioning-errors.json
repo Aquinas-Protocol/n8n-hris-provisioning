@@ -1,0 +1,67 @@
+{
+  "id": "HRISPROVERROR001",
+  "name": "HRIS provisioning - error alerts",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "nodes": [
+    {
+      "id": "e14dd503-0917-5826-9b41-732b5fe68610",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "b6448217-3742-593c-a729-18e4f4c31578",
+      "name": "Slack: alert #it-alerts",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.SLACK_ALERTS_CHANNEL_ID }}"
+        },
+        "messageType": "text",
+        "text": "=:rotating_light: *Provisioning failed* — `{{ $json.workflow.name }}`\n*Failed node:* {{ $json.execution?.lastNodeExecuted ?? 'trigger' }}\n*Error:* {{ $json.execution?.error?.message ?? $json.trigger?.error?.message ?? 'unknown' }}\n*Execution:* {{ $json.execution?.url ?? ('#' + $json.execution?.id) }} · mode {{ $json.execution?.mode ?? $json.trigger?.mode }}\n_Nothing after the failed node ran. Fix the cause and re-fire the HRIS event; every step is idempotent._",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": null,
+          "name": "Slack Bot (n8n-hris)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Slack: alert #it-alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,74 @@
+name: ci
+
+# Keyless by design: no Slack/Notion/Google credentials in CI. The jobs prove the parts a
+# stranger depends on — the mock's contract, that the compose stack boots on the pinned n8n
+# and both workflows import from JSON, and that nothing secret-shaped ever entered git history.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  mock-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest
+      - run: python -m pytest -q -p no:cacheprovider mock-google-admin/tests
+
+  compose-smoke:
+    # Boots n8n 2.35.7 + the mock exactly as the README says, imports both workflow JSONs through
+    # the CLI (no owner account needed), and exercises the mock through the published port.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cp .env.example .env
+      - run: docker compose up -d --build
+      - name: wait for n8n
+        run: |
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:5678/healthz >/dev/null 2>&1 && break
+            sleep 3
+          done
+          curl -fsS http://localhost:5678/healthz/readiness
+      - name: import both workflows from JSON
+        run: docker compose exec -T n8n n8n import:workflow --separate --input=/workflows
+      - name: assert both workflows are present
+        run: |
+          docker compose exec -T n8n n8n list:workflow | tee wf.txt
+          grep -q '^HRISPROVMAIN0001|' wf.txt
+          grep -q '^HRISPROVERROR001|' wf.txt
+      - name: mock Admin SDK contract through the compose port
+        run: |
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/admin/directory/v1/users/nobody@example.test)" = 404
+          curl -fsS -X POST http://localhost:8000/admin/directory/v1/users \
+            -H 'Content-Type: application/json' \
+            -d '{"primaryEmail":"ada.lovelace@example.test","name":{"givenName":"Ada","familyName":"Lovelace"},"password":"x"}' \
+            | jq -e '.kind == "admin#directory#user"'
+      - name: container logs on failure
+        if: failure()
+        run: docker compose logs n8n mock-google-admin
+      - name: tear down
+        if: always()
+        run: docker compose down -v
+
+  secrets-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # gitleaks over the FULL history + working tree (the action's push-range scan errors on a
+      # parentless root commit).
+      - name: gitleaks (full history + tree)
+        run: |
+          VER=8.24.3
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" | tar -xz -C /tmp gitleaks
+          /tmp/gitleaks git . --redact -v --exit-code 1
+          /tmp/gitleaks dir . --redact -v --exit-code 1

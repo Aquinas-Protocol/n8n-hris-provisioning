@@ -1,0 +1,16 @@
+{
+  "event": "employee.hired",
+  "event_id": "evt_01J8HRIS0000DEMO",
+  "source": "mock-hris",
+  "employee": {
+    "id": "E-1042",
+    "first_name": "Ada",
+    "last_name": "Lovelace",
+    "title": "Software Engineer II",
+    "department": "Engineering",
+    "manager_email": "grace.hopper@example.test",
+    "start_date": "2026-09-01",
+    "location": "Remote - US",
+    "existing_email": "you@example.test"
+  }
+}

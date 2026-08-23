@@ -1,0 +1,13 @@
+[project]
+name = "mock-google-admin"
+version = "0.1.0"
+description = "Stdlib mock of the Google Workspace Admin SDK Directory API (users + group members) for the n8n HRIS provisioning demo"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+addopts = "-q -p no:cacheprovider"
+testpaths = ["tests"]

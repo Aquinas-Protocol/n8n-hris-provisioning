@@ -1,0 +1,613 @@
+{
+  "id": "HRISPROVMAIN0001",
+  "name": "HRIS new hire - provisioning",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "HRISPROVERROR001",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
+  },
+  "nodes": [
+    {
+      "id": "c16c2581-7b1f-5232-bdd9-d89d281eea49",
+      "name": "HRIS webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "47c84842-428b-5346-82e8-c9b6a6b3d78d",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hris/new-hire",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": null,
+          "name": "HRIS Webhook Token"
+        }
+      }
+    },
+    {
+      "id": "9b2d5093-70c8-5778-9037-8da6e3a441d8",
+      "name": "Normalize",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// One HRIS event per call. Any throw here routes to the Error Workflow (-> #it-alerts).\nconst body = $input.first().json.body ?? {};\nif (body.event !== 'employee.hired') throw new Error(`Unsupported event \"${body.event}\" (expected employee.hired)`);\nconst e = body.employee ?? {};\nconst req = (k) => { const v = String(e[k] ?? '').trim(); if (!v) throw new Error(`HRIS payload missing employee.${k}`); return v; };\nconst first = req('first_name'), last = req('last_name'), department = req('department'), startDate = req('start_date');\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(startDate) || Number.isNaN(Date.parse(startDate))) throw new Error(`employee.start_date must be YYYY-MM-DD, got \"${startDate}\"`);\nif (Date.parse(startDate) < Date.now() - 30 * 86400e3) throw new Error(`employee.start_date ${startDate} is more than 30 days in the past`);\n\n// Work email = first.last@DEMO_DOMAIN, ASCII-folded and slugged (Zoë O'Brien -> zoe.obrien).\nconst slug = (s) => s.normalize('NFKD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '').slice(0, 30);\nconst domain = $env.DEMO_DOMAIN || 'example.test';\nconst workEmail = `${slug(first)}.${slug(last)}@${domain}`;\n\n// Department -> Google group / Slack onboarding channel, from env maps like \"engineering=eng@x,default=all@x\".\nconst parseMap = (s) => Object.fromEntries(String(s || '').split(',').map(p => p.trim()).filter(Boolean)\n  .map(p => { const [k, v] = p.split('='); return [k.trim().toLowerCase(), (v || '').trim()]; }));\nconst deptKey = department.toLowerCase().replace(/[^a-z0-9]+/g, '-');\nconst groups = parseMap($env.GOOGLE_GROUP_MAP), channels = parseMap($env.SLACK_ONBOARDING_CHANNEL_MAP);\nconst googleGroup = groups[deptKey] ?? groups.default ?? `all-hands@${domain}`;\nconst slackChannelId = channels[deptKey] ?? channels.default;\nif (!slackChannelId) throw new Error('SLACK_ONBOARDING_CHANNEL_MAP needs a default=C... entry');\n\n// Demo-only temporary password. Production: deliver out-of-band and disable success-data retention.\nconst alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%';\nconst tempPassword = Array.from({ length: 20 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');\n\nreturn [{ json: {\n  event_id: body.event_id ?? null, employee_id: e.id ?? null,\n  first_name: first, last_name: last, full_name: `${first} ${last}`,\n  title: e.title ?? '', department, department_key: deptKey,\n  manager_email: e.manager_email ?? '', start_date: startDate, location: e.location ?? '',\n  work_email: workEmail, slack_lookup_email: String(e.existing_email || workEmail).toLowerCase(),\n  google_group: googleGroup, slack_channel_id: slackChannelId,\n  temp_password: tempPassword, received_at: new Date().toISOString(),\n}}];\n"
+      }
+    },
+    {
+      "id": "183f0dc3-787f-5a37-9373-dd355057307a",
+      "name": "Google: lookup user",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $env.GOOGLE_ADMIN_BASE_URL }}/admin/directory/v1/users/{{ encodeURIComponent($json.work_email) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "55da0ec7-7e5c-582c-8754-96c17789ec6f",
+      "name": "Slack: request approval",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        660,
+        300
+      ],
+      "webhookId": "39192b9b-99e3-5ea2-8360-2f3b4ac50e59",
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "message",
+        "operation": "sendAndWait",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.SLACK_APPROVALS_CHANNEL_ID }}"
+        },
+        "message": "=:bust_in_silhouette: *New-hire provisioning request*\n*Name:* {{ $('Normalize').first().json.full_name }} · *Title:* {{ $('Normalize').first().json.title }}\n*Department:* {{ $('Normalize').first().json.department }} · *Start:* {{ $('Normalize').first().json.start_date }} · *Manager:* {{ $('Normalize').first().json.manager_email }}\n*Work email:* `{{ $('Normalize').first().json.work_email }}`\n*Plan:* Google account → {{ $json.statusCode === 200 ? 'already exists (skip create)' : 'create' }} · group `{{ $('Normalize').first().json.google_group }}` · Slack <#{{ $('Normalize').first().json.slack_channel_id }}> · Notion People row\n_HRIS event_ `{{ $('Normalize').first().json.event_id }}` · _execution_ `{{ $execution.id }}` · auto-declines in 1h",
+        "responseType": "approval",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "Approve",
+            "buttonApprovalStyle": "primary",
+            "disapproveLabel": "Decline",
+            "buttonDisapprovalStyle": "secondary"
+          }
+        },
+        "options": {
+          "limitWaitTime": {
+            "values": {
+              "limitType": "afterTimeInterval",
+              "resumeAmount": 1,
+              "resumeUnit": "hours"
+            }
+          }
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": null,
+          "name": "Slack Bot (n8n-hris)"
+        }
+      }
+    },
+    {
+      "id": "8fcedb75-b018-5a90-a28e-9acbf9142a0d",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "approved",
+              "leftValue": "={{ $json.data?.approved === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "51ed921b-24b9-594a-9da6-55ae292c3db8",
+      "name": "Google user exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1100,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "exists",
+              "leftValue": "={{ $('Google: lookup user').first().json.statusCode === 200 }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "6b007e64-b60c-5839-981a-9ca0a1d8da03",
+      "name": "Google: create user",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        320
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GOOGLE_ADMIN_BASE_URL }}/admin/directory/v1/users",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  primaryEmail: $('Normalize').first().json.work_email,\n  name: { givenName: $('Normalize').first().json.first_name, familyName: $('Normalize').first().json.last_name },\n  password: $('Normalize').first().json.temp_password,\n  changePasswordAtNextLogin: true,\n  orgUnitPath: '/' + $('Normalize').first().json.department,\n  externalIds: [{ type: 'organization', value: $('Normalize').first().json.employee_id }]\n}) }}",
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 1000
+    },
+    {
+      "id": "7678d89e-7368-5f3f-9963-f3524cdce49e",
+      "name": "Google: add to group",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.GOOGLE_ADMIN_BASE_URL }}/admin/directory/v1/groups/{{ encodeURIComponent($('Normalize').first().json.google_group) }}/members",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ email: $('Normalize').first().json.work_email, role: 'MEMBER' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "id": "b9c8bfc7-a9ea-5bad-8be5-e75901249c43",
+      "name": "Slack: lookup user",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        200
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://slack.com/api/users.lookupByEmail",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "slackApi",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "email",
+              "value": "={{ $('Normalize').first().json.slack_lookup_email }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "slackApi": {
+          "id": null,
+          "name": "Slack Bot (n8n-hris)"
+        }
+      }
+    },
+    {
+      "id": "24af42c3-db78-583c-a755-de06f152a344",
+      "name": "Slack user found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1980,
+        200
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "found",
+              "leftValue": "={{ $json.ok === true }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "141b1139-5a32-5364-980d-2c8d401af98d",
+      "name": "Slack: invite to channel",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        2200,
+        100
+      ],
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "channel",
+        "operation": "invite",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $('Normalize').first().json.slack_channel_id }}"
+        },
+        "userIds": "={{ [$('Slack: lookup user').first().json.user.id] }}"
+      },
+      "credentials": {
+        "slackApi": {
+          "id": null,
+          "name": "Slack Bot (n8n-hris)"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "2bd1b9fe-3195-59d5-aecd-408ace6069f0",
+      "name": "Notion: create People row",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        2420,
+        200
+      ],
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "create",
+        "dataSourceId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.NOTION_DATA_SOURCE_ID }}"
+        },
+        "title": "={{ $('Normalize').first().json.full_name }}",
+        "simple": true,
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Work Email|email",
+              "emailValue": "={{ $('Normalize').first().json.work_email }}"
+            },
+            {
+              "key": "Department|select",
+              "selectValue": "={{ $('Normalize').first().json.department }}"
+            },
+            {
+              "key": "Role|rich_text",
+              "textContent": "={{ $('Normalize').first().json.title }}"
+            },
+            {
+              "key": "Manager|email",
+              "emailValue": "={{ $('Normalize').first().json.manager_email }}"
+            },
+            {
+              "key": "Start Date|date",
+              "range": false,
+              "includeTime": false,
+              "date": "={{ $('Normalize').first().json.start_date }}",
+              "timezone": "default"
+            },
+            {
+              "key": "Status|select",
+              "selectValue": "Provisioned"
+            },
+            {
+              "key": "Employee ID|rich_text",
+              "textContent": "={{ $('Normalize').first().json.employee_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "credentials": {
+        "notionApi": {
+          "id": null,
+          "name": "Notion (n8n-hris)"
+        }
+      }
+    },
+    {
+      "id": "8840873d-b6fb-5741-8b59-b12b7221fce6",
+      "name": "Slack: post summary",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        2640,
+        200
+      ],
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.SLACK_APPROVALS_CHANNEL_ID }}"
+        },
+        "messageType": "text",
+        "text": "=:white_check_mark: *New hire provisioned* — {{ $('Normalize').first().json.full_name }} ({{ $('Normalize').first().json.title }}, {{ $('Normalize').first().json.department }})\n• *Google Workspace:* `{{ $('Normalize').first().json.work_email }}` — {{ $('Google user exists?').first().json.statusCode === 200 ? 'already existed — create skipped' : 'created (id ' + $('Google: create user').first().json.id + ')' }}\n• *Group:* `{{ $('Normalize').first().json.google_group }}` — {{ ({200: 'added', 409: 'already a member'})[$('Google: add to group').first().json.statusCode] ?? ('FAILED HTTP ' + $('Google: add to group').first().json.statusCode) }}\n• *Slack:* {{ $('Slack: lookup user').first().json.ok ? ($('Slack: invite to channel').first().json.error ? 'found <@' + $('Slack: lookup user').first().json.user.id + '> but invite returned `' + $('Slack: invite to channel').first().json.error + '`' : 'invited <@' + $('Slack: lookup user').first().json.user.id + '> to <#' + $('Normalize').first().json.slack_channel_id + '>') : 'pending — no Slack account for ' + $('Normalize').first().json.slack_lookup_email + ' yet (SCIM/SSO creates it at first login)' }}\n• *Notion:* <{{ $('Notion: create People row').first().json.url }}|People row created>\n• *Approved* {{ $('Slack: request approval').first().json.data.respondedAt }} · HRIS event `{{ $('Normalize').first().json.event_id }}` · execution `{{ $execution.id }}`",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": null,
+          "name": "Slack Bot (n8n-hris)"
+        }
+      }
+    },
+    {
+      "id": "815fe6ca-9eb6-57ca-80e7-d23d7d8c488e",
+      "name": "Slack: post declined",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.7,
+      "position": [
+        1100,
+        480
+      ],
+      "parameters": {
+        "authentication": "accessToken",
+        "resource": "message",
+        "operation": "post",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.SLACK_APPROVALS_CHANNEL_ID }}"
+        },
+        "messageType": "text",
+        "text": "=:no_entry: Provisioning for *{{ $('Normalize').first().json.full_name }}* was {{ $json.data ? 'declined' : 'not approved within 1h (timed out)' }} — nothing was created. HRIS event `{{ $('Normalize').first().json.event_id }}` · execution `{{ $execution.id }}`",
+        "otherOptions": {
+          "includeLinkToWorkflow": false,
+          "mrkdwn": true
+        }
+      },
+      "credentials": {
+        "slackApi": {
+          "id": null,
+          "name": "Slack Bot (n8n-hris)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "HRIS webhook": {
+      "main": [
+        [
+          {
+            "node": "Normalize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize": {
+      "main": [
+        [
+          {
+            "node": "Google: lookup user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google: lookup user": {
+      "main": [
+        [
+          {
+            "node": "Slack: request approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack: request approval": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Google user exists?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Slack: post declined",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google user exists?": {
+      "main": [
+        [
+          {
+            "node": "Google: add to group",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Google: create user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google: create user": {
+      "main": [
+        [
+          {
+            "node": "Google: add to group",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google: add to group": {
+      "main": [
+        [
+          {
+            "node": "Slack: lookup user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack: lookup user": {
+      "main": [
+        [
+          {
+            "node": "Slack user found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack user found?": {
+      "main": [
+        [
+          {
+            "node": "Slack: invite to channel",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notion: create People row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack: invite to channel": {
+      "main": [
+        [
+          {
+            "node": "Notion: create People row",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion: create People row": {
+      "main": [
+        [
+          {
+            "node": "Slack: post summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

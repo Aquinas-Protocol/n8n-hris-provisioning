@@ -1,0 +1,36 @@
+# n8n + a mock Google Admin SDK. `cp .env.example .env`, then `docker compose up -d --build`.
+# Everything workspace-specific (Slack channel ids, Notion data-source id) comes from .env;
+# API tokens are entered once in the n8n UI as named credentials, never in files.
+services:
+  mock-google-admin:
+    build: ./mock-google-admin
+    ports:
+      - "8000:8000"          # host access for scripts/demo-error.* and curl /_mock/state
+    restart: unless-stopped
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:2.35.7
+    ports:
+      - "5678:5678"
+    env_file: .env
+    environment:
+      # The workflow reads its ids via $env.* — n8n 2.x blocks that unless this is literally "false".
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      # Inside the compose network the mock is reachable by service name (overrides the .env localhost value).
+      GOOGLE_ADMIN_BASE_URL: http://mock-google-admin:8000
+      # Base for the Approve/Decline links Slack shows; whoever clicks must be able to open it.
+      WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678/}
+      N8N_RUNNERS_MODE: internal
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_PERSONALIZATION_ENABLED: "false"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/workflows:ro   # docker compose exec -T n8n n8n import:workflow --separate --input=/workflows
+    depends_on:
+      mock-google-admin:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  n8n_data: {}

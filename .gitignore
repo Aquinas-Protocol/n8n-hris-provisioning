@@ -1,0 +1,26 @@
+# local runtime secrets — the real .env carries the n8n encryption key, the HRIS
+# header token, and your workspace IDs. .env.example is the committed contract.
+.env
+.env.local
+
+# per-machine sample payloads (your real Slack email for the invite leg)
+samples/*.local.json
+
+# scratch: execution-DB copies, build notes, exported-but-unsanitized workflows
+/.tmp/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# native-run n8n data, if you ever point N8N_USER_FOLDER at the repo
+/.n8n/
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.log

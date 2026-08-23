@@ -1,0 +1,30 @@
+# Slack app manifest for the n8n HRIS provisioning demo.
+# api.slack.com/apps -> Create New App -> "From a manifest" -> pick the workspace -> paste this.
+# After install: copy the Bot User OAuth Token (xoxb-...) into the n8n credential
+# named exactly  "Slack Bot (n8n-hris)"  (type: Slack API, Access Token).
+# Then, in each channel the bot must act in:  /invite @n8n-hris
+display_information:
+  name: n8n-hris
+  description: New-hire provisioning approvals, channel invites, and IT alerts (n8n demo)
+  background_color: "#1f2a44"
+features:
+  bot_user:
+    display_name: n8n-hris
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - chat:write            # post approval requests, summaries, alerts
+      - chat:write.public     # post into public channels without an invite
+      - channels:read         # resolve channel ids
+      - channels:manage       # conversations.invite into public channels
+      - groups:write          # conversations.invite into private channels
+      - users:read            # users.lookupByEmail
+      - users:read.email      # users.lookupByEmail
+      - users.profile:read    # n8n credential test (auth.test / profile read)
+settings:
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false
+  # Interactivity is deliberately OFF: approvals use signed link buttons that
+  # open the n8n resume URL, so n8n never has to be publicly reachable.
