@@ -10,6 +10,7 @@ if (Test-Path "$Root\.env") {
 $env:N8N_BLOCK_ENV_ACCESS_IN_NODE = 'false'
 if (-not $env:GOOGLE_ADMIN_BASE_URL) { $env:GOOGLE_ADMIN_BASE_URL = 'http://localhost:8000' }
 if (-not $env:WEBHOOK_URL) { $env:WEBHOOK_URL = 'http://localhost:5678/' }
+$env:N8N_WEBHOOK_URL = $env:WEBHOOK_URL
 $env:N8N_DIAGNOSTICS_ENABLED = 'false'; $env:N8N_VERSION_NOTIFICATIONS_ENABLED = 'false'; $env:N8N_PERSONALIZATION_ENABLED = 'false'
 
 $mock = Start-Process -FilePath python -ArgumentList "`"$Root\mock-google-admin\mock_google_admin.py`" --port 8000" -PassThru -NoNewWindow

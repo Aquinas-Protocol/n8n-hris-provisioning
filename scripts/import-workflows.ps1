@@ -19,6 +19,6 @@ if ($running) {
 & $n8n @('list:workflow')
 
 if ($Publish) {
-  & $n8n @('publish:workflow', '--id=HRISPROVMAIN0001')
+  & $n8n @('publish:workflow', '--id=HRISPROVMAIN0001'); & $n8n @('publish:workflow', '--id=HRISPROVERROR001')
   if ($running) { docker compose restart n8n } else { Write-Host 'restart your native n8n to activate the webhook' }
 }

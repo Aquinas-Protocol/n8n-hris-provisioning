@@ -2,12 +2,6 @@
   "id": "HRISPROVMAIN0001",
   "name": "HRIS new hire - provisioning",
   "active": false,
-  "settings": {
-    "executionOrder": "v1",
-    "errorWorkflow": "HRISPROVERROR001",
-    "saveExecutionProgress": true,
-    "saveManualExecutions": true
-  },
   "nodes": [
     {
       "id": "c16c2581-7b1f-5232-bdd9-d89d281eea49",
@@ -408,7 +402,7 @@
           "value": "={{ $env.SLACK_APPROVALS_CHANNEL_ID }}"
         },
         "messageType": "text",
-        "text": "=:white_check_mark: *New hire provisioned* — {{ $('Normalize').first().json.full_name }} ({{ $('Normalize').first().json.title }}, {{ $('Normalize').first().json.department }})\n• *Google Workspace:* `{{ $('Normalize').first().json.work_email }}` — {{ $('Google user exists?').first().json.statusCode === 200 ? 'already existed — create skipped' : 'created (id ' + $('Google: create user').first().json.id + ')' }}\n• *Group:* `{{ $('Normalize').first().json.google_group }}` — {{ ({200: 'added', 409: 'already a member'})[$('Google: add to group').first().json.statusCode] ?? ('FAILED HTTP ' + $('Google: add to group').first().json.statusCode) }}\n• *Slack:* {{ $('Slack: lookup user').first().json.ok ? ($('Slack: invite to channel').first().json.error ? 'found <@' + $('Slack: lookup user').first().json.user.id + '> but invite returned `' + $('Slack: invite to channel').first().json.error + '`' : 'invited <@' + $('Slack: lookup user').first().json.user.id + '> to <#' + $('Normalize').first().json.slack_channel_id + '>') : 'pending — no Slack account for ' + $('Normalize').first().json.slack_lookup_email + ' yet (SCIM/SSO creates it at first login)' }}\n• *Notion:* <{{ $('Notion: create People row').first().json.url }}|People row created>\n• *Approved* {{ $('Slack: request approval').first().json.data.respondedAt }} · HRIS event `{{ $('Normalize').first().json.event_id }}` · execution `{{ $execution.id }}`",
+        "text": "=:white_check_mark: *New hire provisioned* — {{ $('Normalize').first().json.full_name }} ({{ $('Normalize').first().json.title }}, {{ $('Normalize').first().json.department }})\n• *Google Workspace:* `{{ $('Normalize').first().json.work_email }}` — {{ $('Google: lookup user').first().json.statusCode === 200 ? 'already existed — create skipped' : 'created (id ' + $('Google: create user').first().json.id + ')' }}\n• *Group:* `{{ $('Normalize').first().json.google_group }}` — {{ ({200: 'added', 409: 'already a member'})[$('Google: add to group').first().json.statusCode] ?? ('FAILED HTTP ' + $('Google: add to group').first().json.statusCode) }}\n• *Slack:* {{ $('Slack: lookup user').first().json.ok ? ($('Slack: invite to channel').first().json.error ? 'found <@' + $('Slack: lookup user').first().json.user.id + '> but invite returned `' + $('Slack: invite to channel').first().json.error + '`' : 'invited <@' + $('Slack: lookup user').first().json.user.id + '> to <#' + $('Normalize').first().json.slack_channel_id + '>') : 'pending — no Slack account for ' + $('Normalize').first().json.slack_lookup_email + ' yet (SCIM/SSO creates it at first login)' }}\n• *Notion:* <{{ $('Notion: create People row').first().json.url }}|People row created>\n• *Approved* {{ $('Slack: request approval').first().json.data.respondedAt }} · HRIS event `{{ $('Normalize').first().json.event_id }}` · execution `{{ $execution.id }}`",
         "otherOptions": {
           "includeLinkToWorkflow": false,
           "mrkdwn": true
@@ -609,5 +603,11 @@
         ]
       ]
     }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": "HRISPROVERROR001",
+    "saveExecutionProgress": true,
+    "saveManualExecutions": true
   }
 }

@@ -5,8 +5,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 if [ -f "$ROOT/.env" ]; then set -a; . "$ROOT/.env"; set +a; fi
 
-PAYLOAD="$ROOT/samples/new-hire.local.json"
-[ -f "$PAYLOAD" ] || PAYLOAD="$ROOT/samples/new-hire.json"
+cd "$ROOT"   # relative payload path: immune to MSYS path-conversion quirks on Git Bash
+PAYLOAD="samples/new-hire.local.json"
+[ -f "$PAYLOAD" ] || PAYLOAD="samples/new-hire.json"
 BASE="${WEBHOOK_URL:-http://localhost:5678/}"
 URL="${BASE%/}/webhook/hris/new-hire"
 

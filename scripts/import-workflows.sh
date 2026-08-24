@@ -9,6 +9,7 @@ cd "$ROOT"
 if docker compose ps --status running --services 2>/dev/null | grep -qx n8n; then
   N8N=(docker compose exec -T n8n n8n)
   INPUT=/workflows                      # read-only bind mount, see docker-compose.yml
+  export MSYS_NO_PATHCONV=1            # Git Bash: stop MSYS rewriting /workflows into a Windows path
 else
   N8N=(npx -y n8n@2.35.7)
   INPUT="$ROOT/workflows"
@@ -19,5 +20,6 @@ fi
 
 if [ "${1:-}" = "--publish" ]; then
   "${N8N[@]}" publish:workflow --id=HRISPROVMAIN0001
+  "${N8N[@]}" publish:workflow --id=HRISPROVERROR001   # 2.x: unpublished error workflows are silently skipped
   if [ "${N8N[0]}" = docker ]; then docker compose restart n8n; else echo "restart your native n8n to activate the webhook"; fi
 fi

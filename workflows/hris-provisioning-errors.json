@@ -2,9 +2,6 @@
   "id": "HRISPROVERROR001",
   "name": "HRIS provisioning - error alerts",
   "active": false,
-  "settings": {
-    "executionOrder": "v1"
-  },
   "nodes": [
     {
       "id": "e14dd503-0917-5826-9b41-732b5fe68610",
@@ -63,5 +60,8 @@
         ]
       ]
     }
+  },
+  "settings": {
+    "executionOrder": "v1"
   }
 }

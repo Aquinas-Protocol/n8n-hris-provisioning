@@ -78,9 +78,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
-        with STATE.lock:
-            STATE.calls.append({"ts": now_iso(), "method": self.command,
-                                "path": self.path, "status": status})
+        if not self.path.startswith("/_mock/"):  # keep healthcheck/state polls out of the call log
+            with STATE.lock:
+                STATE.calls.append({"ts": now_iso(), "method": self.command,
+                                    "path": self.path, "status": status})
 
     def _json_body(self) -> dict | None:
         length = int(self.headers.get("Content-Length") or 0)

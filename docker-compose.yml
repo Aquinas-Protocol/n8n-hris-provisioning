@@ -19,7 +19,8 @@ services:
       # Inside the compose network the mock is reachable by service name (overrides the .env localhost value).
       GOOGLE_ADMIN_BASE_URL: http://mock-google-admin:8000
       # Base for the Approve/Decline links Slack shows; whoever clicks must be able to open it.
-      WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678/}
+      # (n8n 2.x name is N8N_WEBHOOK_URL; the .env keeps the single WEBHOOK_URL key and we map it here.)
+      N8N_WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678/}
       N8N_RUNNERS_MODE: internal
       N8N_DIAGNOSTICS_ENABLED: "false"
       N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
