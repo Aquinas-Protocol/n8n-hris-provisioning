@@ -31,12 +31,15 @@ jobs:
       - run: cp .env.example .env
       - run: docker compose up -d --build
       - name: wait for n8n
+        # /healthz answers before first-boot migrations finish; poll readiness itself
         run: |
-          for i in $(seq 1 60); do
-            curl -fsS http://localhost:5678/healthz >/dev/null 2>&1 && break
+          for i in $(seq 1 100); do
+            curl -fsS http://localhost:5678/healthz/readiness >/dev/null 2>&1 && exit 0
             sleep 3
           done
-          curl -fsS http://localhost:5678/healthz/readiness
+          echo "n8n never became ready" >&2
+          docker compose logs n8n | tail -50
+          exit 1
       - name: import both workflows from JSON
         run: docker compose exec -T n8n n8n import:workflow --separate --input=/workflows
       - name: assert both workflows are present
