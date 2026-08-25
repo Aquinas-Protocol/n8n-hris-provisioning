@@ -11,6 +11,17 @@ channel, writes the Notion `People` row, and posts a summary. Anything that brea
 Self-hosted, JSON-in-git, importable from the CLI, runnable by a stranger with
 `docker compose up`.
 
+## The pattern generalizes
+
+The HRIS webhook is a stand-in for any **access-request source**. The same shape
+(event ingress → normalize → HITL approval → idempotent provisioning across N systems
+→ summary + error lane) works unchanged for SaaS grants, AI-tool access requests
+(Claude / ChatGPT / Cursor seat pools), offboarding, or any human-in-the-loop
+provisioning workflow that needs an audit trail, a real human gate, and safe
+re-firing. Swap the trigger (Slack shortcut, Google Form, ServiceNow ticket) and
+change the provisioning legs to whatever systems the request touches; the
+approval-gate + idempotent-step spine stays the same.
+
 ## TL;DR
 
 Per `employee.hired` event:
